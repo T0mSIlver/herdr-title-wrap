@@ -69,16 +69,31 @@ python3 bin/watcher.py --ensure    # inside a herdr pane
 
 ## Auto wrap width
 
-`pane.layout`'s `area.x` equals the rendered sidebar width (the terminal
-area is reported in absolute screen coordinates; verified against the
-v0.7.5 source — the "auto-scaled based on workspace names" comment in the
-default config is stale, the width is `clamp(sidebar_width, min, max)` from
-config/session/drag). Dragging the divider emits no socket event, so the
-daemon re-probes every `POLL_SECONDS` (recv timeout on the subscription
-socket) as well as on `layout.updated` and before title reports. On a width
-change every pane is re-wrapped once. While the sidebar is collapsed/hidden
-or mobile (probe < 8 columns) the last expanded width is kept. Continuation
-agent rows get `width − 4 − scrollbar` columns, hence `ROW_MARGIN = 5`.
+On older Herdr versions such as v0.7.5, `pane.layout` reports absolute screen
+coordinates, so its `area.x` equals the rendered sidebar width.
+
+Herdr 0.9 moved the UI into each client. Its layout API uses coordinates
+relative to the pane surface, so `area.x` is zero. The plugin then reads
+`sidebar_width` from the local client's saved chrome preferences under
+`$XDG_STATE_HOME/herdr/client-shell/` (default `~/.local/state/herdr/client-shell/`).
+The preference filename uses Herdr 0.9.5's FNV-1a hash of the local client
+endpoint socket path. This is an internal format that may change in future
+Herdr versions.
+
+When there is no saved width, Python 3.11+ can read `ui.sidebar_width` from
+`config.toml` using the optional standard-library `tomllib` module. Older Python
+versions skip that fallback. If neither source supplies a width, the default
+sidebar width is 26 columns.
+
+Dragging the divider emits no socket event, so the daemon re-probes every
+`POLL_SECONDS` (default 2 seconds) as well as on `layout.updated` and before
+title reports. On a width change every pane is re-wrapped once. A collapsed
+local client keeps the last expanded wrap width. Continuation agent rows get
+`width − 4 − scrollbar` columns, hence `ROW_MARGIN = 5`.
+
+Remote clients have independent sidebar geometry that the server API does
+not expose; the preference fallback measures the local client. Use
+`HERDR_TITLE_WRAP_WIDTH` when a fixed wrap width is more appropriate.
 
 ## Actions
 

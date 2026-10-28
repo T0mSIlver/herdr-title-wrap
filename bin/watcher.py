@@ -8,7 +8,8 @@ multiple rows via [ui.sidebar.agents] (see --print-config).
 
 The wrap width auto-adjusts to the rendered sidebar width: `pane.layout`
 returns the terminal area in absolute screen coordinates, and its `area.x`
-equals the sidebar width (verified against herdr v0.7.5 source, src/ui.rs).
+equals the sidebar width in Herdr 0.7.5. Herdr 0.9+ uses terminal-relative
+coordinates; the fallback reads local client chrome preferences instead.
 Dragging the divider emits no socket event, so the width is re-probed every
 POLL_SECONDS as well as on layout.updated events and before title reports.
 
@@ -38,6 +39,11 @@ import subprocess
 import sys
 import textwrap
 import time
+
+try:
+    import tomllib
+except ImportError:
+    tomllib = None  # Python < 3.11: API and JSON width detection still work.
 
 # ---------------------------------------------------------------------------
 # Tunables — override via environment if you don't want to edit the file.
@@ -96,6 +102,62 @@ def state_dir():
         path = os.path.join(xdg, "herdr-title-wrap")
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def fnv1a_64(data):
+    """Hash bytes with FNV-1a, matching Rust's wrapping u64 multiplication."""
+    digest = 0xcbf29ce484222325
+    for byte in data:
+        digest = ((digest ^ byte) * 0x100000001b3) & 0xffffffffffffffff
+    return digest
+
+
+def client_preferences_path(socket_path):
+    """Locate local chrome preferences using Herdr 0.9.5's internal convention."""
+    # Mirrors Herdr's filename construction; this is not a public API:
+    # https://github.com/herdrdev/herdr/blob/v0.9.5/src/client/shell/preferences.rs
+    # See path_for_local_endpoint. The JSON contains UI preferences, without
+    # a local session identifier; the hashed client socket path identifies it.
+    #
+    # Derive the client endpoint from this session's agent API socket, matching
+    # derive_client_socket_from_api_socket:
+    # https://github.com/herdrdev/herdr/blob/v0.9.5/src/server/socket_paths.rs
+    endpoint_path = os.path.splitext(socket_path)[0] + "-client.sock"
+    digest = fnv1a_64(endpoint_path.encode())
+    root = os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+    return os.path.join(root, "herdr", "client-shell", f"local-{digest:016x}.json")
+
+
+def saved_sidebar_width(socket_path):
+    """Fallback when pane.layout uses terminal-relative coordinates (0.9+).
+
+    Local client preferences are saved on divider drags. Remote clients have
+    their own geometry, which cannot be measured through the server API.
+    """
+    try:
+        with open(client_preferences_path(socket_path)) as handle:
+            preferences = json.load(handle)
+        if preferences.get("sidebar_collapsed"):
+            return None
+        width = preferences.get("sidebar_width")
+        if isinstance(width, int) and not isinstance(width, bool) and width >= 8:
+            return width
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    if tomllib is None:
+        return FALLBACK_WIDTH
+    config_path = os.environ.get("HERDR_CONFIG_PATH")
+    if not config_path:
+        config_path = os.path.join(os.path.dirname(socket_path), "config.toml")
+    try:
+        with open(config_path, "rb") as handle:
+            config = tomllib.load(handle)
+        width = config.get("ui", {}).get("sidebar_width", FALLBACK_WIDTH)
+        if isinstance(width, int) and not isinstance(width, bool) and width >= 8:
+            return width
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return FALLBACK_WIDTH
 
 
 def lock_path(socket_path):
@@ -187,8 +249,10 @@ class Watcher:
         except (KeyError, TypeError):
             return False
         if sidebar_w < 8:
+            sidebar_w = saved_sidebar_width(self.socket_path)
+        if sidebar_w is None or sidebar_w < 8:
             return False
-        new_width = max(sidebar_w - ROW_MARGIN, MIN_WRAP_WIDTH)
+        new_width = min(80, max(sidebar_w - ROW_MARGIN, MIN_WRAP_WIDTH))
         if new_width == self.wrap_width:
             return False
         self.wrap_width = new_width
@@ -204,13 +268,14 @@ class Watcher:
     def report(self, pane_id, title):
         values = wrap_title(title, self.wrap_width)
         tokens = {f"{TOKEN_PREFIX}{i + 1}": v for i, v in enumerate(values)}
-        self.request("pane.report_metadata", {
+        response = self.request("pane.report_metadata", {
             "pane_id": pane_id,
             "source": SOURCE,
             "seq": time.time_ns(),
             "tokens": tokens,
         })
-        self.last_report[pane_id] = (title, self.wrap_width)
+        if response is not None and "result" in response:
+            self.last_report[pane_id] = (title, self.wrap_width)
 
     def handle_pane(self, pane, probe=True):
         pane_id = pane.get("pane_id")
