@@ -1,15 +1,15 @@
 # herdr title-wrap
 
-Wrap Claude Code session titles across multiple rows in [Herdr](https://herdr.dev)'s
+Wrap pane terminal titles across multiple rows in [Herdr](https://herdr.dev)'s
 agent sidebar, auto-fitting the sidebar width.
 
-Claude Code sets the terminal title to the session name; Herdr's sidebar
-shows it via the `terminal_title_stripped` token, truncated to one line.
-This plugin republishes each Claude pane's title as pane-metadata tokens
+Programs such as Claude Code and Codex set terminal titles; Herdr exposes
+them through `terminal_title_stripped`, with activity spinners removed.
+This plugin republishes each pane's title as pane-metadata tokens
 `title_l1`..`title_l4`, word-wrapped to the rendered sidebar width, so the
-full session name is readable. Rows without a value are hidden by Herdr, so
-short titles collapse to fewer rows; when a title shrinks, unused lines are
-cleared (reported as `null`).
+full title is readable, independently of the detected agent. Rows without a
+value are hidden by Herdr, so short titles collapse to fewer rows; when a
+title shrinks, unused lines are cleared (reported as `null`).
 
 <img src="docs/screenshot.png" width="345"
      alt="Herdr agents sidebar with Claude Code session titles word-wrapped across multiple rows">
@@ -31,8 +31,8 @@ herdr plugin log list --plugin title-wrap    # output lands in the plugin log
 ```
 
 ```toml
-[ui.sidebar.agents.rows_by_agent]
-claude = [
+[ui.sidebar.agents]
+rows = [
   ["state_icon", "workspace", "tab"],
   ["$title_l1"],
   ["$title_l2"],

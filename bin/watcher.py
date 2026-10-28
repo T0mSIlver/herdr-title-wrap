@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Herdr title-wrap plugin: wrapped Claude Code session titles in the sidebar.
+"""Herdr title-wrap plugin: wrapped pane terminal titles in the sidebar.
 
 Watches Herdr pane title changes over the socket API and republishes each
-Claude pane's terminal title as wrapped pane-metadata tokens
+pane's terminal title as wrapped pane-metadata tokens
 (title_l1..title_lN) so the sidebar can show the full session title across
-multiple rows via [ui.sidebar.agents.rows_by_agent] (see --print-config).
+multiple rows via [ui.sidebar.agents] (see --print-config).
 
 The wrap width auto-adjusts to the rendered sidebar width: `pane.layout`
 returns the terminal area in absolute screen coordinates, and its `area.x`
@@ -58,14 +58,13 @@ FALLBACK_WIDTH = 26  # herdr's default sidebar_width, used if probing fails
 
 SOURCE = "title-wrap"
 TOKEN_PREFIX = "title_l"
-AGENTS = {"claude"}  # panes whose titles get wrapped
 
 CONFIG_SNIPPET = """\
 # Add to ~/.config/herdr/config.toml, then run: herdr server reload-config
 # (rows with no value are hidden automatically; the row count must match
 # the plugin's MAX_LINES / HERDR_TITLE_WRAP_LINES, default 4)
-[ui.sidebar.agents.rows_by_agent]
-claude = [
+[ui.sidebar.agents]
+rows = [
   ["state_icon", "workspace", "tab"],
 """ + "".join(f'  ["${TOKEN_PREFIX}{i + 1}"],\n' for i in range(MAX_LINES)) + "]"
 
@@ -87,13 +86,6 @@ def wrap_title(title, width):
             break_on_hyphens=False,
         )
     return lines + [None] * (MAX_LINES - len(lines))
-
-
-def is_agent_pane(pane):
-    if pane.get("agent") in AGENTS:
-        return True
-    session = pane.get("agent_session") or {}
-    return session.get("agent") in AGENTS
 
 
 def state_dir():
@@ -225,9 +217,9 @@ class Watcher:
         if not pane_id:
             return
         self.probe_pane_id = pane_id
-        if not is_agent_pane(pane):
-            return
         title = pane.get("terminal_title_stripped") or ""
+        if not title and pane_id not in self.last_report:
+            return
         if self.last_report.get(pane_id) == (title, self.wrap_width):
             return  # only update when title or wrap width actually changed
         # Title changes are rare; re-probe so a resized sidebar is picked up

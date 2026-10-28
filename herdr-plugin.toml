@@ -1,4 +1,4 @@
-# herdr title-wrap: wrapped Claude Code session titles in the agent sidebar.
+# herdr title-wrap: wrapped pane terminal titles in the agent sidebar.
 #
 # All hooks run watcher.py --ensure, which spawns one detached daemon per
 # herdr server (flock singleton) and returns immediately, so startup is
@@ -15,7 +15,7 @@ id = "title-wrap"
 name = "Title Wrap"
 version = "0.1.0"
 min_herdr_version = "0.7.5"
-description = "Wrap Claude Code session titles across multiple sidebar rows, auto-fitting the sidebar width"
+description = "Wrap pane terminal titles across multiple sidebar rows, following local sidebar width"
 platforms = ["linux", "macos"]
 
 [[startup]]
